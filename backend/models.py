@@ -21,8 +21,18 @@ class OSOption(BaseModel):
     name: str
     edition: str
     image_name: str          # Windows setup /IMAGE/NAME value
-    iso_url: str             # configurable install ISO source
-    virtio_url: str          # VirtIO driver ISO source
+    iso_url: str             # configurable install ISO source (qemu method)
+    virtio_url: str          # VirtIO driver ISO source (qemu method)
+    install_method: str = "qemu"   # "qemu" (needs KVM) or "image" (dd a prebuilt raw image)
+    image_url: str = ""            # gzipped raw Windows disk image URL (image method)
+    virtio_dir: str = "2k22"       # virtio-win driver folder for this OS (2k19/2k22/2k25)
+    # Phase 6 - prebuilt golden image (DO snapshot) for fast provisioning
+    golden_image_id: Optional[int] = None
+    golden_region: Optional[str] = None
+    golden_regions: List[str] = []
+    golden_min_disk_gb: int = 0
+    golden_status: str = "none"    # none, building, available, failed
+    golden_build_id: Optional[str] = None
     supported: bool = True
     note: str = ""
 
@@ -123,6 +133,8 @@ class UpdateOSReq(BaseModel):
     iso_url: Optional[str] = None
     virtio_url: Optional[str] = None
     image_name: Optional[str] = None
+    install_method: Optional[str] = None
+    image_url: Optional[str] = None
     supported: Optional[bool] = None
     note: Optional[str] = None
 
@@ -140,3 +152,7 @@ class ProvisionCallbackReq(BaseModel):
     message: str = ""
     progress: Optional[int] = None
     status: Optional[str] = None
+
+
+class BuildImageReq(BaseModel):
+    region: str = "nyc3"

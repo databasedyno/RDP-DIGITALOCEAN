@@ -6,7 +6,9 @@ load_dotenv(ROOT_DIR / ".env")
 
 import os
 import logging
+from datetime import timezone
 from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 from starlette.middleware.cors import CORSMiddleware
 
 import do_client as do
@@ -15,11 +17,11 @@ from database import db, seed_catalog
 from models import (
     DURATIONS, now_utc, new_id,
     CreateOrderReq, CreateTierReq, UpdateTierReq, UpdateOSReq,
-    UpdatePricingReq, ProvisionCallbackReq,
+    UpdatePricingReq, ProvisionCallbackReq, BuildImageReq,
 )
 from provisioning import (
     gen_password, gen_token, add_log, start_provisioning, start_reprovision,
-    apply_activation, process_expiries,
+    apply_activation, process_expiries, start_build_golden, SCRIPTS_DIR,
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -47,7 +49,11 @@ async def get_price(tier_id: str, duration: int):
 
 def is_expired(server: dict) -> bool:
     exp = server.get("expires_at")
-    return bool(exp and exp <= now_utc())
+    if not exp:
+        return False
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    return exp <= now_utc()
 
 
 # ---------------- meta ----------------
@@ -151,6 +157,43 @@ async def update_os(os_id: str, req: UpdateOSReq):
     if res.matched_count == 0:
         raise HTTPException(404, "OS option not found")
     return await db.os_options.find_one({"id": os_id}, {"_id": 0})
+
+
+# ---------------- golden images (Phase 6) ----------------
+@api.get("/provision/bootscript", response_class=PlainTextResponse)
+async def bootscript():
+    return (SCRIPTS_DIR / "apply.ps1").read_text()
+
+
+@api.post("/os/{os_id}/build-image")
+async def build_image(os_id: str, req: BuildImageReq):
+    os_opt = await db.os_options.find_one({"id": os_id}, {"_id": 0})
+    if not os_opt:
+        raise HTTPException(404, "OS option not found")
+    if os_opt.get("golden_status") == "building":
+        raise HTTPException(400, "A golden image build is already in progress for this OS")
+    start_build_golden(os_id, req.region)
+    return {"os_id": os_id, "region": req.region, "status": "building"}
+
+
+@api.get("/os/{os_id}/build-status")
+async def build_status(os_id: str):
+    build = await db.image_builds.find_one({"os_id": os_id}, {"_id": 0}, sort=[("created_at", -1)])
+    if not build:
+        raise HTTPException(404, "No build found for this OS")
+    return build
+
+
+@api.get("/images")
+async def list_images():
+    out = []
+    for o in await db.os_options.find({}, {"_id": 0}).to_list(100):
+        out.append({
+            "os_id": o["id"], "name": o["name"], "golden_status": o.get("golden_status", "none"),
+            "golden_image_id": o.get("golden_image_id"), "golden_regions": o.get("golden_regions", []),
+            "golden_min_disk_gb": o.get("golden_min_disk_gb", 0),
+        })
+    return out
 
 
 # ---------------- pricing ----------------
@@ -260,8 +303,11 @@ async def provision_callback(req: ProvisionCallbackReq):
     if not server or server.get("callback_token") != req.token:
         raise HTTPException(403, "Invalid callback token")
     status = req.status
-    if req.stage in ("rdp_ready",) or (req.progress is not None and req.progress >= 100):
+    if req.stage == "rdp_ready" or (req.progress is not None and req.progress >= 100):
         await apply_activation(server)
+    elif req.stage == "failed":
+        await add_log(req.server_id, "failed", req.message or "Conversion failed.", req.progress, "failed")
+        await db.orders.update_one({"server_id": req.server_id}, {"$set": {"status": "failed"}})
     else:
         status = status or "converting"
         await add_log(req.server_id, req.stage, req.message or req.stage, req.progress, status)

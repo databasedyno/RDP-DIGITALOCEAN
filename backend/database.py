@@ -2,7 +2,7 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from models import DURATIONS
 
-client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+client = AsyncIOMotorClient(os.environ["MONGO_URL"], tz_aware=True)
 db = client[os.environ["DB_NAME"]]
 
 # Microsoft evaluation ISOs (configurable per OS via API). VirtIO from Fedora.
@@ -14,8 +14,11 @@ DEFAULT_OS = [
         "name": "Windows Server 2019",
         "edition": "Standard (Desktop Experience)",
         "image_name": "Windows Server 2019 SERVERSTANDARD",
-        "iso_url": "https://software-static.download.prss.microsoft.com/db/Windows_Server_2019_Datacenter_EVAL_en-us_1809.iso",
+        "virtio_dir": "2k19",
+        "iso_url": "https://go.microsoft.com/fwlink/p/?linkid=2195167&clcid=0x409&culture=en-us&country=US",
         "virtio_url": _VIRTIO,
+        "install_method": "qemu",
+        "image_url": "",
         "supported": True,
         "note": "180-day evaluation. Switch to SPLA-licensed media before selling.",
     },
@@ -24,8 +27,11 @@ DEFAULT_OS = [
         "name": "Windows Server 2022",
         "edition": "Standard (Desktop Experience)",
         "image_name": "Windows Server 2022 SERVERSTANDARD",
+        "virtio_dir": "2k22",
         "iso_url": "https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x409&culture=en-us&country=US",
         "virtio_url": _VIRTIO,
+        "install_method": "qemu",
+        "image_url": "",
         "supported": True,
         "note": "180-day evaluation. Switch to SPLA-licensed media before selling.",
     },
@@ -34,8 +40,11 @@ DEFAULT_OS = [
         "name": "Windows Server 2025",
         "edition": "Standard (Desktop Experience)",
         "image_name": "Windows Server 2025 SERVERSTANDARD",
+        "virtio_dir": "2k25",
         "iso_url": "https://go.microsoft.com/fwlink/?linkid=2293312&clcid=0x409&culture=en-us&country=US",
         "virtio_url": _VIRTIO,
+        "install_method": "qemu",
+        "image_url": "",
         "supported": True,
         "note": "180-day evaluation. Switch to SPLA-licensed media before selling.",
     },
@@ -57,6 +66,19 @@ DEFAULT_TIERS = [
 async def seed_catalog():
     for o in DEFAULT_OS:
         await db.os_options.update_one({"id": o["id"]}, {"$setOnInsert": o}, upsert=True)
+    # Ensure newer fields exist on previously-seeded docs.
+    await db.os_options.update_many(
+        {"install_method": {"$exists": False}},
+        {"$set": {"install_method": "qemu", "image_url": ""}},
+    )
+    await db.os_options.update_many(
+        {"golden_status": {"$exists": False}},
+        {"$set": {"golden_image_id": None, "golden_region": None, "golden_regions": [],
+                  "golden_min_disk_gb": 0, "golden_status": "none", "golden_build_id": None}},
+    )
+    await db.os_options.update_one({"id": "ws2019", "virtio_dir": {"$exists": False}}, {"$set": {"virtio_dir": "2k19"}})
+    await db.os_options.update_one({"id": "ws2022", "virtio_dir": {"$exists": False}}, {"$set": {"virtio_dir": "2k22"}})
+    await db.os_options.update_one({"id": "ws2025", "virtio_dir": {"$exists": False}}, {"$set": {"virtio_dir": "2k25"}})
     for t in DEFAULT_TIERS:
         await db.tiers.update_one({"id": t["id"]}, {"$setOnInsert": t}, upsert=True)
     # Seed placeholder sell prices (~2x DO cost) for each active tier x duration.

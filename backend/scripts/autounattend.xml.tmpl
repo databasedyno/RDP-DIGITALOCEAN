@@ -44,8 +44,8 @@
           <InstallTo><DiskID>0</DiskID><PartitionID>1</PartitionID></InstallTo>
           <InstallFrom>
             <MetaData wcm:action="add">
-              <Key>/IMAGE/NAME</Key>
-              <Value>{{IMAGE_NAME}}</Value>
+              <Key>/IMAGE/INDEX</Key>
+              <Value>2</Value>
             </MetaData>
           </InstallFrom>
         </OSImage>
@@ -55,9 +55,12 @@
         <FullName>Administrator</FullName>
         <Organization>RDP Reseller</Organization>
       </UserData>
+    </component>
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
       <DriverPaths>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>E:\</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>F:\</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>A:\</Path></PathAndCredentials>
       </DriverPaths>
     </component>
   </settings>
@@ -106,6 +109,18 @@
         <SynchronousCommand wcm:action="add">
           <Order>3</Order>
           <CommandLine>cmd /c netsh advfirewall firewall set rule group="remote desktop" new enable=Yes</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <CommandLine>cmd /c mkdir C:\cloudinit</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>5</Order>
+          <CommandLine>cmd /c powershell -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri '{{BOOTSCRIPT_URL}}' -OutFile 'C:\cloudinit\apply.ps1'"</CommandLine>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>6</Order>
+          <CommandLine>cmd /c schtasks /create /tn CloudInitApply /tr "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\cloudinit\apply.ps1" /sc onstart /ru SYSTEM /rl HIGHEST /f</CommandLine>
         </SynchronousCommand>
       </FirstLogonCommands>
     </component>

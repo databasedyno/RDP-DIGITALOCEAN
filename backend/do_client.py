@@ -37,9 +37,11 @@ async def list_sizes():
     return await do_request("GET", "/sizes", params={"per_page": 200})
 
 
-async def create_droplet(name, region, size, image, user_data=None, tags=None):
+async def create_droplet(name, region, size, image, user_data=None, tags=None, ssh_keys=None):
     body = {"name": name, "region": region, "size": size, "image": image,
             "tags": tags or []}
+    if ssh_keys:
+        body["ssh_keys"] = ssh_keys
     if user_data is not None:
         body["user_data"] = user_data
     return await do_request("POST", "/droplets", json=body)
@@ -55,3 +57,15 @@ async def droplet_action(droplet_id: int, body: dict):
 
 async def delete_droplet(droplet_id: int):
     return await do_request("DELETE", f"/droplets/{droplet_id}")
+
+
+async def get_action(action_id: int):
+    return await do_request("GET", f"/actions/{action_id}")
+
+
+async def droplet_snapshots(droplet_id: int):
+    return await do_request("GET", f"/droplets/{droplet_id}/snapshots")
+
+
+async def image_action(image_id: int, body: dict):
+    return await do_request("POST", f"/images/{image_id}/actions", json=body)
